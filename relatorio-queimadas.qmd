@@ -1,0 +1,275 @@
+---
+title: "Explorando os focos de queimadas e incêndios do Brasil no mês de maio: uma análise baseada em dados"
+lang: "pt"
+author: "Luíza Helena Pereira Lúcio"
+format:
+  html:
+    toc: true
+    toc-title: "Sumário"
+    code-copy: true
+    embed-resources: true
+    code-tools: false
+    echo: false
+    theme: cosmo
+editor: source
+---
+
+```{r, message=FALSE, warning=FALSE}
+
+#média 
+# pacotes necessários
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+
+# lendo a base 
+focos_mensal <- read.csv("focos_mensal_202505.csv", header = TRUE, sep = ",")
+
+# data
+focos_mensal$data_hora_gmt <- as.Date(focos_mensal$data_hora_gmt, tryFormats = c("%Y-%m-%d"))
+
+# Filtra somente os dados do Brasil e seleciona variáveis de interesse
+dados <- focos_mensal |>
+  filter(pais == "Brasil") |>
+  select(pais, lat, lon, data_hora_gmt, estado, municipio,
+         numero_dias_sem_chuva, precipitacao, risco_fogo, bioma, frp)
+
+# tirando os valores negativos e NA
+dados <- dados |>
+  mutate(across(c(numero_dias_sem_chuva, precipitacao, risco_fogo, frp),
+                ~ ifelse(. < 0, NA, .))) |>
+  drop_na(numero_dias_sem_chuva, precipitacao, risco_fogo, frp)
+
+# agrupando por data, estado e bioma para calcular as médias
+dados <- dados |>
+  group_by(data_hora_gmt, estado, bioma) |>
+  summarise(
+    numero_dias_sem_chuva = round(mean(numero_dias_sem_chuva, na.rm = TRUE), 3),
+    precipitacao = round(mean(precipitacao, na.rm = TRUE), 3),
+    risco_fogo = round(mean(risco_fogo, na.rm = TRUE), 3),
+    frp = round(mean(frp, na.rm = TRUE), 3),
+    .groups = "drop"
+  )
+
+```
+
+## Introdução 
+
+:::{.justify}
+Esta análise exploratória de dados tem como objetivo investigar os focos de queimadas e incêndios no Brasil durante o mês de maio de 2025. O trabalho foi desenvolvido como parte do meu processo de aprendizagem no curso de Estatística da Universidade Federal de Lavras, na disciplina de Organização e Apresentação de Dados (GES109).
+:::
+  
+### Público-Alvo e Direcionamento da Análise
+
+:::{.justify}
+O público-alvo dessa análise é a sociedade em geral, com ênfase especial nos brasileiros, visto que o foco dos dados é o território nacional. A ideia é informar tanto o público leigo quanto profissionais e tomadores de decisão interessados em entender os padrões e riscos relacionados as queimadas no Brasil.
+:::
+
+:::{.justify}
+Ao explorar esse conjunto de dados, levantei diversos questionamentos sobre as relações entre variáveis, a existência de regiões com maior risco de incêndios e a relação com outros fatores. Ao longo deste relatório, apresentarei uma série de respostas para essas perguntas e outras, que serão discutidas com base na análise realizada.
+:::
+
+### Fonte dos dados
+
+:::{.justify}
+Este conjunto de dados é uma fonte primária, ou seja fornece informações originais, coletadas diretamente por quem realizou a medição. Nesse caso, os dados foram obtidos no portal de dados abertos do Programa Queimadas do Instituto Nacional de Pesquisas Espaciais (INPE). A coleta foi realizada no dia 26/05, a partir do conjunto nomeado [Focos de Queimadas e Incêndios](https://terrabrasilis.dpi.inpe.br/queimadas/portal/dados-abertos/), no formato CSV e referente a base do mês de maio que contempla toda a América Latina.
+:::
+
+### Observações e variáveis
+
+:::{.justify}
+Nesta base de dados, temos 131.180 observações e 16 variáveis de três tipos. As variáveis do tipo chr (character) correspondem a variáveis categóricas nominais, pois representam categorias sem uma ordem natural. As do tipo double (dbl) são variáveis quantitativas contínuas, utilizadas para representar números reais, podendo conter casas decimais, enquanto as do tipo integer (int), que também são quantitativas, mas discretas, assumem apenas valores inteiros. Há ainda uma variável do tipo date, que é temporal, utilizada para representar datas no formato ano-mês-dia, permitindo análises ao longo do tempo.
+:::
+
+:::{.justify}
+A base original trata da América Latina e o foco dessa EDA é somente no Brasil, então afunilei seguindo essa linha de raciocínio e, no total, trabalhei com 930 observações e 5 variáveis:  data, estado, dia sem chuva, risco fogo e bioma.
+:::
+
+## Análise e Visualização dos Dados 
+
+### Ranking das UFs de dias sem chuva
+
+#### Qual unidade federativa tem a maior mediana de dias sem chuvas?
+
+```{r, message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(knitr)
+
+# Cálculo das estatísticas por estado
+estatisticas_estado <- dados |>
+  group_by(estado) |>
+  summarise(
+    mediana_dias_sem_chuva = median(numero_dias_sem_chuva, na.rm = TRUE)
+  ) |>
+  ungroup()
+
+# Top 5 estados por mediana de dias sem chuva
+top_mediana <- estatisticas_estado |>
+  slice_max(mediana_dias_sem_chuva, n = 5) |>
+  mutate(
+    mediana_dias_sem_chuva = format(round(mediana_dias_sem_chuva, 2), decimal.mark = ",")
+  )
+
+# Exibir tabela 1 com vírgula decimal
+kable(
+  top_mediana,
+  caption = "Tabela 1: Top 5 Estados por Mediana de Dias Sem Chuva",
+  col.names = c("Estado", "Mediana dos dias sem chuva")
+)
+
+```
+
+:::{.justify}
+A Tabela 1 apresenta os cinco estados com as maiores medianas da variável "Dias sem chuvas", que representa períodos de seca. A mediana foi escolhida como medida de tendência central por ser mais robusta frente a valores extremos e oferecer uma visão mais representativa da distribuição dos dados. Minas Gerais se destaca com a maior mediana entre os estados. Isso significa que para MG 50% das observações registradas apresentam menos de 14 dias sem chuva, enquanto os outros 50% tem valores acima desse número.
+:::
+
+### Analisando a Frequência de Focos de Queimadas por Biomas
+
+#### Quais biomas se destacam? Será que o Cerrado tem mais foco por ser mais seco?
+
+```{r, message=FALSE, warning=FALSE}
+
+library(plotly)
+
+Biomas <- dados |>
+  count(bioma, sort = TRUE) |>
+  ggplot(aes(x = reorder(bioma, n), y = n)) +
+  geom_col(fill = "brown2") +
+  coord_flip() +
+  labs(x = "Bioma", y = "Quantidade de Focos de Queimadas", title = "Figura 1: Focos de queimadas por bioma") +
+  theme_classic()
+
+ggplotly(Biomas)
+
+```
+
+:::{.justify}
+Na Figura 1, são apresentados os focos de queimadas por bioma, por meio de um gráfico de barras horizontal, em que o eixo Y representa os biomas da base de dados e o eixo X indica a quantidade de focos de queimadas.
+Respondendo as perguntas, é possível observar que os três biomas que mais se destacam são a Mata Atlântica, o Cerrado e a Caatinga.
+:::
+
+### Relacionando variáveis
+
+#### Existe uma relação entre o número de dias sem chuva e o aumento do risco de fogo?
+
+```{r, message=FALSE, warning=FALSE}
+
+library(ggplot2)
+library(plotly)
+
+G <- ggplot(dados, aes(x = numero_dias_sem_chuva, y = risco_fogo)) +
+  geom_point(alpha = 0.4, color = "firebrick3") +
+  scale_size_continuous(name = "FRP (potência do fogo)") +
+  theme_minimal() +
+  labs(title = "Figura 2: Dias sem Chuva X Risco de Fogo",
+       x = "Número de Dias sem Chuva",
+       y = "Risco de Fogo")
+
+ggplotly(G) 
+
+```
+
+:::{.justify}
+Na Figura 2, é apresentado um gráfico de dispersão em que cada ponto representa uma observação com o número de dias sem chuva no eixo X e o risco de fogo no eixo Y.
+O gráfico sugere que existe uma relação positiva entre as variáveis, pois é possível observar claramente que, conforme o número de dias sem chuva aumenta, o risco de fogo também tende a crescer.
+
+>> Nota: Como os dados foram analisados no software R, os números com casas decimais aparecem utilizando o ponto (.) como separador decimal, em vez da vírgula (,). Portanto, um valor como 13.954 deve ser lido como 13,954 dias e não como treze mil.
+:::
+
+### Dimensão Geográfica
+
+#### Quais regiões tem mais risco? E quais tem menos?
+
+```{r, message=FALSE, warning=FALSE}
+# dimensão geográfica:
+#onde tem mais críticos
+
+library(geobr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(stringr)
+library(abjutils) # necessário para rm_accent()
+
+# carregar shapes dos estados
+estados_geo <- read_state(year = 2020)
+
+# padronizar nomes no geobr
+estados_geo <- estados_geo |>
+  mutate(name_state_lower = tolower(rm_accent(name_state)) |> str_trim())
+
+# padronizar nomes no seu dado
+dados <- dados |>
+  mutate(estado_lower = tolower(rm_accent(estado)) |> str_trim())
+
+# calcular média do risco de fogo por estado
+mapa_dados <- dados |>
+  group_by(estado_lower) |>
+  summarise(media_risco_fogo = mean(risco_fogo, na.rm = TRUE)) |>
+  ungroup()
+
+# juntar os dados
+mapa_completo <- estados_geo |>
+  left_join(mapa_dados, by = c("name_state_lower" = "estado_lower"))
+
+# mapa
+risco_fogo <- ggplot(mapa_completo) +
+  geom_sf(aes(fill = media_risco_fogo), color = "black") +
+  scale_fill_gradient(low = "#fff7bc", high = "#d73027", name = "Risco Médio de Fogo") +
+  labs(title = "Figura 4:
+       Risco Médio de Fogo por Estado - Brasil (Maio 2025)", x= "Longitude", y= "Latitude",
+       caption = "Fonte: INPE / geobr") +
+  theme_minimal()
+
+ggplotly(risco_fogo)
+
+```
+
+:::{.justify}
+Na Figura 3, temos um mapa do Brasil que mostra o risco médio de fogo por estado, representado por um gradiente de cores que varia do amarelo claro, indicando menores índices, ao vermelho forte, indicando maiores índices. Analisando o mapa, é possível dizer que a região Nordeste apresenta maior risco médio de fogo por estado, enquanto a região Sul apresenta menor risco.
+:::
+    
+## Conclusão
+
+:::{.justify}
+Um dos maiores desafios, nessa análise foi "filtrar" a base de dados, pois é uma base bem grande e com muita coisa interessante, então talvez o limite estabelecido tenha sido um grande desafio. Destaco principalmente a Figura 4 (Mapa de risco médio de fogo por estado), pois, além de demorar a carregar, muitos erros foram encontrados, logo foi o gráfico mais difícil de fazer. 
+:::
+
+:::{.justify}
+Nessa análise exploratória, foi possível identificar padrões importantes relacionados aos focos de queimadas e incêndios no Brasil durante o mês de maio de 2025. A mediana de dias sem chuva mostrou que estados como Minas Gerais apresentam períodos longos de seca. A análise dos biomas revelou que Mata Atlântica, Cerrado e Caatinga são os que registram maior número de focos de queimadas. O gráfico de dispersão evidenciou que períodos mais secos tendem a aumentar a probabilidade dos incêndios. Já a dimensão geográfica, representada pelo mapa de risco médio por estado, apontou que a região Nordeste apresenta um risco maior, enquanto a região Sul demonstra menor vulnerabilidade a incêndios.
+:::
+
+:::{.justify}
+Acredito que foram bons resultados, mas destaco a necessidade de aprofundar as análises, incorporando outras variáveis ambientais, socioeconômicas e políticas para entender melhor os fatores que influenciam a ocorrência das queimadas no Brasil. E também porque essa foi uma análise considerando somente o mês de maio, talvez uma visualização do ano todo seja melhor. Além disso, talvez seja possível usar esses dados para desenvolver estratégias de prevenção ou combate das queimadas e incêndios, visando proteger o meio ambiente, mas também as populações afetadas.
+:::
+
+## Referências 
+
+Instituto Nacional de Pesquisas Espaciais (INPE). Base de dados sobre queimadas – TerraBrasilis. Disponível em: https://terrabrasilis.dpi.inpe.br/queimadas/portal/dados-abertos/. Acesso em: 26/05/2025.
+
+WICKHAM, Hadley; GROLEMUND, Garrett. R for Data Science (2ª edição). Disponível em: https://r4ds.hadley.nz/. Acesso em: 28/05/2025.
+
+Quarto Documentation – Guide. Disponível em: https://quarto.org/docs/guide/. Acesso em: 30/05/2025.
+
+BUCKERIDGE, Marcos. As várias faces dos incêndios no Brasil. Jornal da USP. Disponível em: https://jornal.usp.br/articulistas/marcos-buckeridge/as-varias-faces-dos-incendios-no-brasil/. Acesso em: 02/06/2025.
+
+R CORE TEAM. R: A Language and Environment for Statistical Computing. Vienna: R Foundation for Statistical Computing, 2025. Disponível em: https://www.r-project.org/. Acesso em: 02/06/2025.
+
+WICKHAM, Hadley et al. Welcome to the tidyverse. Journal of Open Source Software, v. 4, n. 43, p. 1686, 2019. doi:10.21105/joss.01686. Disponível em: https://doi.org/10.21105/joss.01686. Acesso em: 02/06/2025.
+
+GROLEMUND, Garrett; WICKHAM, Hadley. Dates and Times Made Easy with lubridate. Journal of Statistical Software, v. 40, n. 3, p. 1–25, 2011. Disponível em: https://www.jstatsoft.org/v40/i03/. Acesso em: 02/06/2025.
+
+PEREIRA, Renato; GONÇALVES, Caio. geobr: Download Official Spatial Data Sets of Brazil. R package version 1.9.1, 2024. doi:10.32614/CRAN.package.geobr. Disponível em: https://CRAN.R-project.org/package=geobr. Acesso em: 02/06/2025.
+
+WICKHAM, Hadley. stringr: Simple, Consistent Wrappers for Common String Operations. R package version 1.5.1, 2023. doi:10.32614/CRAN.package.stringr. Disponível em: https://CRAN.R-project.org/package=stringr. Acesso em: 02/06/2025.
+
+LENTE, Caio; TRECENTI, Jurandir. abjutils: Useful Tools for Jurimetrical Analysis Used by the Brazilian Jurimetrics Association. R package version 0.3.2, 2022. doi:10.32614/CRAN.package.abjutils. Disponível em: https://CRAN.R-project.org/package=abjutils. Acesso em: 02/06/2025.
+
+XIE, Yihui. knitr: A General-Purpose Package for Dynamic Report Generation in R. R package version 1.50, 2025. Disponível em: https://yihui.org/knitr/. Acesso em: 02/06/2025.
+
+
+
+
+

@@ -1,0 +1,265 @@
+---
+title: "ㅤㅤFocos de queimadas e incêndios"
+format: 
+  dashboard:
+    orientation: columns
+    theme:
+      - sandstone
+logo: logo_branca_da_ufla.png
+output: 
+  flexdashboard::flex_dashboard:
+  vertical_layout: fill
+---
+
+```{r, message=FALSE, warning=FALSE}
+#média 
+# pacotes necessários
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+
+# lendo a base 
+focos_mensal <- read.csv("focos_mensal_202505.csv", header = TRUE, sep = ",")
+
+# data
+focos_mensal$data_hora_gmt <- as.Date(focos_mensal$data_hora_gmt, tryFormats = c("%Y-%m-%d"))
+
+# Filtra somente os dados do Brasil e seleciona variáveis de interesse
+dados <- focos_mensal |>
+  filter(pais == "Brasil") |>
+  select(pais, lat, lon, data_hora_gmt, estado, municipio,
+         numero_dias_sem_chuva, precipitacao, risco_fogo, bioma, frp)
+
+# tirando os valores negativos e NA
+dados <- dados |>
+  mutate(across(c(numero_dias_sem_chuva, precipitacao, risco_fogo, frp),
+                ~ ifelse(. < 0, NA, .))) |>
+  drop_na(numero_dias_sem_chuva, precipitacao, risco_fogo, frp)
+
+# agrupando por data, estado e bioma para calcular as médias
+dados <- dados |>
+  group_by(data_hora_gmt, estado, bioma) |>
+  summarise(
+    numero_dias_sem_chuva = round(mean(numero_dias_sem_chuva, na.rm = TRUE), 3),
+    precipitacao = round(mean(precipitacao, na.rm = TRUE), 3),
+    risco_fogo = round(mean(risco_fogo, na.rm = TRUE), 3),
+    frp = round(mean(frp, na.rm = TRUE), 3),
+    .groups = "drop"
+  )
+```
+
+# Descrição dos Dados
+
+## Column {width=60%}
+
+Esta análise exploratória de dados tem como objetivo investigar os focos de queimadas e incêndios no Brasil durante o mês de maio de 2025.  
+O público-alvo é a sociedade em geral, com ênfase especial nos brasileiros, visto que o foco dos dados é o território nacional.  
+
+### Observações e variáveis 
+
+Na base de dados original, temos 131.180 observações e 16 variáveis de três tipos. As variáveis do tipo chr (character), double (dbl), integer (int) e do tipo date.  
+
+A base original trata da América Latina e o foco da análise foi somente no Brasil, então afunilei seguindo essa linha de raciocínio e, no total, trabalhei com 930 observações e 5 variáveis:  data, estado, dia sem chuva, risco fogo e bioma.
+
+
+## Column {width=40%}
+
+![](mapa_br.png){width=100%}
+Fonte: [https://firms.modaps.eosdis.nasa.gov/map/#d:24hrs;@-17.6,-2.4,3.2z](https://firms.modaps.eosdis.nasa.gov/map/#d:24hrs;@-17.6,-2.4,3.2z)
+
+# Análise de Frequências
+
+```{r, message=FALSE, warning=FALSE}
+# dimensão geográfica:
+#onde tem mais críticos
+
+library(geobr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(stringr)
+library(abjutils) # necessário para rm_accent()
+
+# carregar shapes dos estados
+estados_geo <- read_state(year = 2020)
+
+# padronizar nomes no geobr
+estados_geo <- estados_geo |>
+  mutate(name_state_lower = tolower(rm_accent(name_state)) |> str_trim())
+
+# padronizar nomes no seu dado
+dados <- dados |>
+  mutate(estado_lower = tolower(rm_accent(estado)) |> str_trim())
+
+# calcular média do risco de fogo por estado
+mapa_dados <- dados |>
+  group_by(estado_lower) |>
+  summarise(media_risco_fogo = mean(risco_fogo, na.rm = TRUE)) |>
+  ungroup()
+
+# juntar os dados
+mapa_completo <- estados_geo |>
+  left_join(mapa_dados, by = c("name_state_lower" = "estado_lower"))
+
+# mapa
+risco_fogo <- ggplot(mapa_completo) +
+  geom_sf(aes(fill = media_risco_fogo), color = "black") +
+  scale_fill_gradient(low = "#fff7bc", high = "#d73027", name = "Risco Médio de Fogo") +
+  labs(title = "Risco Médio de Fogo por Estado - Brasil (Maio 2025)", x= "Longitude", y= "Latitude",
+       caption = "Fonte: INPE / geobr") +
+  theme_minimal()
+
+ggplotly(risco_fogo)
+
+```
+
+## Focos de Queimadas por Biomas
+
+```{r, message=FALSE, warning=FALSE}
+
+library(plotly)
+
+Biomas <- dados |>
+  count(bioma, sort = TRUE) |>
+  ggplot(aes(x = reorder(bioma, n), y = n)) +
+  geom_col(fill = "brown2") +
+  coord_flip() +
+  labs(x = "Bioma", y = "Quantidade de Focos de Queimadas", title = "Frequência de Focos de Queimadas por Biomas") +
+  theme_classic()
+
+ggplotly(Biomas)
+
+```
+
+# Períodos de seca
+
+## Column - Mapa {width=30%}
+
+```{r, message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(knitr)
+
+# Cálculo das estatísticas por estado
+estatisticas_estado <- dados |>
+  group_by(estado) |>
+  summarise(
+    mediana_dias_sem_chuva = median(numero_dias_sem_chuva, na.rm = TRUE)
+  ) |>
+  ungroup()
+
+# Top 5 estados por mediana de dias sem chuva
+top_mediana <- estatisticas_estado |>
+  slice_max(mediana_dias_sem_chuva, n = 26) |>
+  mutate(
+    mediana_dias_sem_chuva = format(round(mediana_dias_sem_chuva, 2), decimal.mark = ",")
+  )
+
+# Exibir tabela 1 com vírgula decimal
+kable(
+  top_mediana,
+  caption = "Número mediano de dias sem chuva por estado do Brasil",
+  col.names = c("Estado", "Mediana dos dias sem chuva")
+)
+
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+
+library(ggplot2)
+library(plotly)
+
+G <- ggplot(dados, aes(x = numero_dias_sem_chuva, y = risco_fogo)) +
+  geom_point(alpha = 0.4, color = "firebrick3") +
+  scale_size_continuous(name = "FRP (potência do fogo)") +
+  theme_minimal() +
+  labs(title = "Relacionando variáveis: Dias sem Chuva X Risco de Fogo",
+       x = "Número de Dias sem Chuva",
+       y = "Risco de Fogo")
+
+ggplotly(G)
+
+```
+
+# Informações
+
+## Column {width=60%}
+
+### ABOUT THIS DASHBOARD
+
+Esse dashboard foi desenvolvido como parte do meu processo de aprendizagem no curso de Estatística da Universidade Federal de Lavras, na disciplina de Organização e Apresentação de Dados (GES109).  
+Os dados foram obtidos no portal de dados abertos do Programa Queimadas do Instituto Nacional de Pesquisas Espaciais (INPE).  
+A coleta foi realizada no dia 26/05, a partir do conjunto nomeado [Focos de Queimadas e Incêndios](https://terrabrasilis.dpi.inpe.br/queimadas/portal/dados-abertos/), no formato CSV e referente à base do mês de maio que contempla toda a América Latina.
+
+Caso queira acessar o relatório completo está disponível em:
+[Explorando os focos de queimadas e incêndios do Brasil no mês de maio: uma análise baseada em dados](https://luizalucio.github.io/meu-site/projetos.html)
+
+### ABOUT ME
+
+**Desenvolvido por:** Luíza Helena Pereira Lúcio  
+📧 **E-mail:** luiza.lucio1@estudante.ufla.br  
+🔗 [LinkedIn](https://www.linkedin.com/in/luizahplucio/)  
+😾 [GitHub](https://github.com/luizalucio)
+
+## Column {width=40%}
+
+### Referências
+
+**Referências**
+
+Instituto Nacional de Pesquisas Espaciais (INPE). Base de dados sobre queimadas – TerraBrasilis. Disponível em: https://terrabrasilis.dpi.inpe.br/queimadas/portal/dados-abertos/. Acesso em: 26/05/2025.
+
+WICKHAM, Hadley; GROLEMUND, Garrett. R for Data Science (2ª edição). Disponível em: https://r4ds.hadley.nz/. Acesso em: 28/05/2025.
+
+Quarto Documentation – Guide. Disponível em: https://quarto.org/docs/guide/. Acesso em: 30/05/2025.
+
+BUCKERIDGE, Marcos. As várias faces dos incêndios no Brasil. Jornal da USP. Disponível em: https://jornal.usp.br/articulistas/marcos-buckeridge/as-varias-faces-dos-incendios-no-brasil/. Acesso em: 02/06/2025.
+
+R Core Team (2025). R: A Language and Environment for Statistical Computing. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>
+
+Wickham H, Averick M, Bryan J, Chang W, McGowan LD, François R,
+  Grolemund G, Hayes A, Henry L, Hester J, Kuhn M, Pedersen TL, Miller
+  E, Bache SM, Müller K, Ooms J, Robinson D, Seidel DP, Spinu V,
+  Takahashi K, Vaughan D, Wilke C, Woo K, Yutani H (2019). “Welcome to
+  the tidyverse.” _Journal of Open Source Software_, *4*(43), 1686.
+  doi:10.21105/joss.01686 <https://doi.org/10.21105/joss.01686>
+  
+H. Wickham. ggplot2: Elegant Graphics for Data Analysis.
+  Springer-Verlag New York, 2016.
+  
+Garrett Grolemund, Hadley Wickham (2011). Dates and Times Made Easy
+  with lubridate. Journal of Statistical Software, 40(3), 1-25. URL
+  https://www.jstatsoft.org/v40/i03/.
+
+ Pereira R, Goncalves C (2024). _geobr: Download Official Spatial Data
+  Sets of Brazil_. doi:10.32614/CRAN.package.geobr
+  <https://doi.org/10.32614/CRAN.package.geobr>, R package version
+  1.9.1, <https://CRAN.R-project.org/package=geobr>.
+  
+   C. Sievert. Interactive Web-Based Data Visualization with R, plotly,
+  and shiny. Chapman and Hall/CRC Florida, 2020.
+  
+   Wickham H (2023). _stringr: Simple, Consistent Wrappers for Common
+  String Operations_. doi:10.32614/CRAN.package.stringr
+  <https://doi.org/10.32614/CRAN.package.stringr>, R package version
+  1.5.1, <https://CRAN.R-project.org/package=stringr>.
+
+ Lente C, Trecenti J (2022). _abjutils: Useful Tools for Jurimetrical
+  Analysis Used by the Brazilian Jurimetrics Association_.
+  doi:10.32614/CRAN.package.abjutils
+  <https://doi.org/10.32614/CRAN.package.abjutils>, R package version
+  0.3.2, <https://CRAN.R-project.org/package=abjutils>.
+
+ Xie Y (2025). _knitr: A General-Purpose Package for Dynamic Report
+  Generation in R_. R package version 1.50, <https://yihui.org/knitr/>.
+
+
+
+
+
+
+
+
+  
