@@ -1,4 +1,4 @@
-# Análise de Queimadas no Brasil — Maio 2025
+# Análise de Queimadas no Brasil - Maio 2025
 
 > Análise exploratória de focos de queimadas e incêndios no Brasil, desenvolvida na disciplina **Organização e Apresentação de Dados (GES109)** do curso de Estatística da Universidade Federal de Lavras (UFLA).
 
@@ -13,9 +13,9 @@
 
 Os dados foram obtidos no portal de dados abertos do **Programa Queimadas do INPE (Instituto Nacional de Pesquisas Espaciais)**, coletados em 26/05/2025.
 
-- Fonte: [TerraBrasilis — Focos de Queimadas e Incêndios](https://terrabrasilis.dpi.inpe.br/queimadas/portal/dados-abertos/)
-- Base original: América Latina — 131.180 observações, 16 variáveis
-- Recorte utilizado: Brasil — 930 observações, 5 variáveis (data, estado, dias sem chuva, risco de fogo, bioma)
+- Fonte: [TerraBrasilis - Focos de Queimadas e Incêndios](https://terrabrasilis.dpi.inpe.br/queimadas/portal/dados-abertos/)
+- Base original: América Latina - 131.180 observações, 16 variáveis
+- Recorte utilizado: Brasil - 930 observações, 5 variáveis (data, estado, dias sem chuva, risco de fogo, bioma)
 
 ## O que foi analisado
 
@@ -56,6 +56,6 @@ quarto render relatorio-queimadas.qmd
 ## Autora
 
 **Luíza Helena Pereira Lúcio**  
-Estudante de Estatística — UFLA  
+Estudante de Estatística - UFLA  
 📧 luiza.lucio1@estudante.ufla.br  
 🔗 [LinkedIn](https://www.linkedin.com/in/luizahplucio/) · [GitHub](https://github.com/luizalucio) · [Portfólio](https://luizalucio.github.io/meu-site)
